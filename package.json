@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc"
+    "build": "npm run clean && tsc && npm run copy",
+    "clean": "rimraf dist",
+    "copy": "cp -r public/* dist/"
   },
   "repository": {
     "type": "git",
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@types/chrome": "^0.0.293",
     "@types/node": "^22.10.5",
+    "rimraf": "^6.0.1",
     "typescript": "^5.7.3"
   }
 }
