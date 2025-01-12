@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         title?: string;
         company?: string;
         notes?: string;
+        relatedUrls?: string[];  // Array of related URLs
     }
 
     interface ScriptResult {
@@ -51,8 +52,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
-            
-            updateSaveButton(urls.some(item => item.url === tab.url));
+            const currentUrl = tab.url;
+
+            // Check if URL exists as main URL or as a related URL in any entry
+            const isUrlSaved = urls.some(item => 
+                item.url === currentUrl || 
+                (item.relatedUrls && item.relatedUrls.includes(currentUrl))
+            );
+
+            // Find the main URL if current URL is a related URL
+            const mainUrl = urls.find(item => 
+                item.relatedUrls && item.relatedUrls.includes(currentUrl)
+            );
+
+            updateSaveButton(isUrlSaved);
+
+            // Highlight both the main URL and its related URLs
+            const urlElements = document.querySelectorAll('li');
+            urlElements.forEach(li => {
+                const link = li.querySelector('a');
+                if (link) {
+                    const linkUrl = link.getAttribute('href');
+                    if (linkUrl === currentUrl || // Current URL matches
+                        (mainUrl && linkUrl === mainUrl.url) || // Main URL of a related URL
+                        (mainUrl?.relatedUrls?.includes(linkUrl || ''))) { // Other related URLs
+                        li.className = 'active-url';
+                    }
+                }
+            });
+
         } catch (error) {
             console.error('Error checking current URL:', error);
         }
@@ -155,15 +183,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             const list = document.createElement('ul');
-            // Remove the reverse() and just iterate through sortedUrls
             sortedUrls.forEach(item => {
                 const li = document.createElement('li');
                 
-                // Add active-url class if this is the current URL
-                if (currentUrl === item.url) {
+                // Highlight if:
+                // 1. This is the current URL
+                // 2. This URL has the current URL as a related URL
+                // 3. The current URL is one of this URL's related URLs
+                if (currentUrl && (
+                    item.url === currentUrl || 
+                    item.relatedUrls?.includes(currentUrl) ||
+                    currentUrl === item.url
+                )) {
                     li.className = 'active-url';
                 }
-                
+
                 // Create URL link with company and title
                 const link = document.createElement('a');
                 link.href = item.url;
@@ -194,11 +228,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                 deleteButton.className = 'delete-btn';
                 deleteButton.onclick = () => deleteUrl(item.url);
                 
-                // Add elements to list item
+                // Update the related URL button to show count if there are related URLs
+                const relatedUrlButton = document.createElement('button');
+                relatedUrlButton.textContent = '🔗';
+                if (item.relatedUrls?.length) {
+                    relatedUrlButton.textContent += ` (${item.relatedUrls.length})`;
+                }
+                relatedUrlButton.className = 'related-url-btn';
+                relatedUrlButton.title = item.relatedUrls?.length 
+                    ? `View ${item.relatedUrls.length} related URL${item.relatedUrls.length > 1 ? 's' : ''}`
+                    : 'Add related URL';
+                relatedUrlButton.onclick = () => showRelatedUrlEditor(item.url, item.relatedUrls);
+
+                // Add buttons to list item
                 li.appendChild(link);
                 li.appendChild(statusButton);
-                li.appendChild(noteButton);  // Add note button
+                li.appendChild(noteButton);
+                li.appendChild(relatedUrlButton);
                 li.appendChild(deleteButton);
+
+                // Remove the always-visible related URLs list
                 list.appendChild(li);
             });
 
@@ -230,17 +279,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('Current tab URL:', tab.url);
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
+            const currentUrl = tab.url;  // Store URL in a const to ensure it's defined
 
-            if (!urls.some(item => item.url === tab.url)) {
+            // Check if URL exists as main URL or as a related URL
+            const isMainUrl = urls.some(item => item.url === currentUrl);
+            const isRelatedUrl = urls.some(item => 
+                item.relatedUrls && item.relatedUrls.includes(currentUrl)  // Now using currentUrl instead of tab.url
+            );
+
+            if (!isMainUrl && !isRelatedUrl) {
                 let jobInfo = { title: null as string | null, company: null as string | null };
-                if (tab.url.includes('linkedin.com/jobs/')) {
+                if (currentUrl.includes('linkedin.com/jobs/')) {
                     console.log('LinkedIn job page detected, fetching info...');
                     jobInfo = await getJobInfo(tab);
                     console.log('Retrieved job info:', jobInfo);
                 }
 
                 urls.push({
-                    url: tab.url,
+                    url: currentUrl,  // Use currentUrl here too
                     applied: false,
                     title: jobInfo.title || undefined,
                     company: jobInfo.company || undefined
@@ -252,7 +308,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 console.log('URL saved successfully');
             } else {
                 updateSaveButton(true);
-                console.log('URL was already saved');
+                console.log('URL was already saved or exists as a related URL');
             }
         } catch (error) {
             console.error('Error saving URL:', error);
@@ -326,6 +382,120 @@ document.addEventListener('DOMContentLoaded', async () => {
             await displayUrls();
         } catch (error) {
             console.error('Error saving note:', error);
+        }
+    };
+
+    // Add this function to show the related URL editor
+    const showRelatedUrlEditor = (url: string, currentRelatedUrls: string[] = []) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'overlay';
+        
+        const editor = document.createElement('div');
+        editor.className = 'related-url-editor';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Paste related URL here...';
+        
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'note-editor-buttons';
+        
+        const saveButton = document.createElement('button');
+        saveButton.textContent = 'Add';
+        saveButton.className = 'save-btn';
+        
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Close';
+        cancelButton.className = 'cancel-btn';
+
+        // Show existing related URLs
+        const relatedUrlsList = document.createElement('div');
+        relatedUrlsList.className = 'related-urls-list';
+        if (currentRelatedUrls.length > 0) {
+            currentRelatedUrls.forEach(relatedUrl => {
+                const urlDiv = document.createElement('div');
+                const urlText = document.createElement('span');
+                urlText.textContent = relatedUrl;
+                const removeBtn = document.createElement('span');
+                removeBtn.textContent = '×';
+                removeBtn.className = 'remove-related-url';
+                removeBtn.onclick = async () => {
+                    await removeRelatedUrl(url, relatedUrl);
+                    urlDiv.remove();
+                };
+                urlDiv.appendChild(urlText);
+                urlDiv.appendChild(removeBtn);
+                relatedUrlsList.appendChild(urlDiv);
+            });
+        }
+        
+        saveButton.onclick = async () => {
+            if (input.value.trim()) {
+                await addRelatedUrl(url, input.value.trim());
+                input.value = '';
+                // Refresh the related URLs list
+                await displayUrls();
+            }
+        };
+        
+        cancelButton.onclick = () => {
+            document.body.removeChild(overlay);
+            document.body.removeChild(editor);
+        };
+        
+        editor.appendChild(input);
+        editor.appendChild(relatedUrlsList);
+        editor.appendChild(buttonsDiv);
+        buttonsDiv.appendChild(cancelButton);
+        buttonsDiv.appendChild(saveButton);
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(editor);
+        input.focus();
+    };
+
+    // Function to add a related URL
+    const addRelatedUrl = async (originalUrl: string, relatedUrl: string) => {
+        try {
+            const result = await chrome.storage.local.get("urls");
+            const urls: SavedURL[] = result.urls || [];
+            const updatedUrls = urls.map(item => {
+                if (item.url === originalUrl) {
+                    const relatedUrls = item.relatedUrls || [];
+                    if (!relatedUrls.includes(relatedUrl)) {
+                        return {
+                            ...item,
+                            relatedUrls: [...relatedUrls, relatedUrl]
+                        };
+                    }
+                }
+                return item;
+            });
+            await chrome.storage.local.set({ urls: updatedUrls });
+            await displayUrls();
+        } catch (error) {
+            console.error('Error adding related URL:', error);
+        }
+    };
+
+    // Function to remove a related URL
+    const removeRelatedUrl = async (originalUrl: string, relatedUrl: string) => {
+        try {
+            const result = await chrome.storage.local.get("urls");
+            const urls: SavedURL[] = result.urls || [];
+            const updatedUrls = urls.map(item => {
+                if (item.url === originalUrl && item.relatedUrls) {
+                    return {
+                        ...item,
+                        relatedUrls: item.relatedUrls.filter(url => url !== relatedUrl)
+                    };
+                }
+                return item;
+            });
+            await chrome.storage.local.set({ urls: updatedUrls });
+            await displayUrls();
+        } catch (error) {
+            console.error('Error removing related URL:', error);
         }
     };
 });
