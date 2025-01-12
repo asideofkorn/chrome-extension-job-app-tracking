@@ -6,6 +6,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     interface SavedURL {
         url: string;
         applied: boolean;
+        title?: string;
+    }
+
+    interface ScriptResult {
+        result: string | null;
     }
 
     // Function to temporarily update button state
@@ -64,6 +69,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    // Function to get job title from the current page
+    const getJobTitle = async (tab: chrome.tabs.Tab): Promise<string | null> => {
+        if (!tab.id) return null;
+        
+        try {
+            const [results] = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    const selectors = [
+                        '.job-details-jobs-unified-top-card__job-title h1',
+                        '.jobs-unified-top-card__job-title',
+                        'h1.top-card-layout__title',
+                        '.jobs-details-top-card__job-title',
+                        '.job-view-layout h1',
+                        '.jobs-unified-top-card__job-title h1',
+                        '.jobs-unified-top-card__job-title span',
+                        '.job-details-jobs-unified-top-card__job-title-heading'
+                    ];
+
+                    for (const selector of selectors) {
+                        const titleElement = document.querySelector(selector);
+                        if (titleElement) {
+                            console.log('Found title element:', titleElement);
+                            return titleElement.textContent?.trim() || null;
+                        }
+                    }
+                    return null;
+                }
+            }) as ScriptResult[];
+            
+            console.log('Script execution result:', results.result);
+            return results.result || null;
+        } catch (error) {
+            console.error('Error getting job title:', error);
+            return null;
+        }
+    };
+
     // Function to display URLs
     const displayUrls = async () => {
         try {
@@ -83,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Create URL link
                 const link = document.createElement('a');
                 link.href = item.url;
-                link.textContent = item.url;
+                link.textContent = item.title || item.url;
                 link.target = '_blank';
                 
                 // Create application status button
@@ -118,19 +161,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveButton.addEventListener('click', async () => {
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (!tab?.url) return;
+            if (!tab?.url) {
+                console.log('No active tab URL found');
+                return;
+            }
 
+            console.log('Current tab URL:', tab.url);
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
 
             if (!urls.some(item => item.url === tab.url)) {
-                // Save the new URL with default not-applied status
-                urls.push({ url: tab.url, applied: false });
+                let title = null;
+                if (tab.url.includes('linkedin.com/jobs/')) {
+                    console.log('LinkedIn job page detected, fetching title...');
+                    title = await getJobTitle(tab);
+                    console.log('Retrieved title:', title);
+                }
+
+                urls.push({
+                    url: tab.url,
+                    applied: false,
+                    title: title || undefined
+                });
+
                 await chrome.storage.local.set({ urls });
                 await displayUrls();
                 updateSaveButton(true);
+                console.log('URL saved successfully');
             } else {
                 updateSaveButton(true);
+                console.log('URL was already saved');
             }
         } catch (error) {
             console.error('Error saving URL:', error);

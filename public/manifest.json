@@ -5,7 +5,11 @@
     "manifest_version": 3,
     "permissions": [
       "storage",
-      "tabs"
+      "tabs",
+      "scripting"
+    ],
+    "host_permissions": [
+        "https://*.linkedin.com/*"
     ],
     "action": {
       "default_title": "Save Job URL",
