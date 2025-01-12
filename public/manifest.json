@@ -1,0 +1,22 @@
+{
+    "name": "Job App Tracking Extension",
+    "description": "A Chrome extension to track job applications by saving the current tab's URL.",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": [
+      "storage",
+      "tabs"
+    ],
+    "action": {
+      "default_title": "Save Job URL",
+      "default_icon": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
+    },
+    "background": {
+      "service_worker": "background.js"
+    }
+  }

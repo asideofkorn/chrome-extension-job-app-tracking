@@ -1,0 +1,26 @@
+{
+  "name": "chrome-extension-job-app-tracking",
+  "version": "1.0.0",
+  "description": "chrome extension to track job applications",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/asideofkorn/chrome-extension-job-app-tracking.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/asideofkorn/chrome-extension-job-app-tracking/issues"
+  },
+  "homepage": "https://github.com/asideofkorn/chrome-extension-job-app-tracking#readme",
+  "devDependencies": {
+    "@types/chrome": "^0.0.293",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}
