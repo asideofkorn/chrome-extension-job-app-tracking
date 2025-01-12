@@ -3,6 +3,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saveButton = document.getElementById('save-url');
     if (!urlsList || !saveButton) return;
 
+    // Function to delete a URL
+    const deleteUrl = async (urlToDelete: string) => {
+        try {
+            const result = await chrome.storage.local.get("urls");
+            const urls: string[] = result.urls || [];
+            const newUrls = urls.filter(url => url !== urlToDelete);
+            await chrome.storage.local.set({ urls: newUrls });
+            await displayUrls();
+        } catch (error) {
+            console.error('Error deleting URL:', error);
+        }
+    };
+
     // Function to display URLs
     const displayUrls = async () => {
         try {
@@ -18,11 +31,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             const list = document.createElement('ul');
             urls.forEach(url => {
                 const li = document.createElement('li');
+                
+                // Create URL link
                 const link = document.createElement('a');
                 link.href = url;
                 link.textContent = url;
-                link.target = '_blank'; // Open in new tab
+                link.target = '_blank';
+                
+                // Create delete button
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = '×';
+                deleteButton.className = 'delete-btn';
+                deleteButton.onclick = () => deleteUrl(url);
+                
+                // Add elements to list item
                 li.appendChild(link);
+                li.appendChild(deleteButton);
                 list.appendChild(li);
             });
 
