@@ -1,7 +1,36 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const urlsList = document.getElementById('urls-list');
-    const saveButton = document.getElementById('save-url');
+    const saveButton = document.getElementById('save-url') as HTMLButtonElement;
     if (!urlsList || !saveButton) return;
+
+    // Function to temporarily update button state
+    const updateSaveButton = (saved: boolean) => {
+        saveButton.textContent = saved ? 'URL Already Saved!' : 'Save Current URL';
+        saveButton.className = saved ? 'already-saved' : '';
+        
+        // Reset button after 2 seconds if it shows "already saved"
+        if (saved) {
+            setTimeout(() => {
+                saveButton.textContent = 'Save Current URL';
+                saveButton.className = '';
+            }, 2000);
+        }
+    };
+
+    // Function to check if current URL is saved
+    const checkCurrentUrl = async () => {
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab?.url) return;
+
+            const result = await chrome.storage.local.get("urls");
+            const urls: string[] = result.urls || [];
+            
+            updateSaveButton(urls.includes(tab.url));
+        } catch (error) {
+            console.error('Error checking current URL:', error);
+        }
+    };
 
     // Function to delete a URL
     const deleteUrl = async (urlToDelete: string) => {
@@ -58,7 +87,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    // Save button click handler
+    // Modified save button click handler
     saveButton.addEventListener('click', async () => {
         try {
             // Get current tab
@@ -69,18 +98,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             const result = await chrome.storage.local.get("urls");
             const urls: string[] = result.urls || [];
 
-            // Add URL if it's not already saved
             if (!urls.includes(tab.url)) {
+                // Save the new URL
                 urls.push(tab.url);
                 await chrome.storage.local.set({ urls });
-                // Refresh the display
                 await displayUrls();
+                updateSaveButton(true);
+            } else {
+                updateSaveButton(true);
             }
         } catch (error) {
             console.error('Error saving URL:', error);
         }
     });
 
+    // Check current URL when popup opens
+    await checkCurrentUrl();
     // Display initial URLs
     await displayUrls();
 });

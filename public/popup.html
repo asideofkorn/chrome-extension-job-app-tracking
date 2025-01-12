@@ -40,9 +40,17 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            transition: all 0.3s ease;
         }
         #save-url:hover {
             background-color: #0052a3;
+        }
+        #save-url.already-saved {
+            background-color: #ff4444;
+            cursor: default;
+        }
+        #save-url.already-saved:hover {
+            background-color: #ff4444;
         }
         .delete-btn {
             background-color: #ff4444;
