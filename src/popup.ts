@@ -3,17 +3,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saveButton = document.getElementById('save-url') as HTMLButtonElement;
     if (!urlsList || !saveButton) return;
 
+    interface SavedURL {
+        url: string;
+        applied: boolean;
+    }
+
     // Function to temporarily update button state
     const updateSaveButton = (saved: boolean) => {
         saveButton.textContent = saved ? 'URL Already Saved!' : 'Save Current URL';
         saveButton.className = saved ? 'already-saved' : '';
         
-        // Reset button after 2 seconds if it shows "already saved"
         if (saved) {
             setTimeout(() => {
                 saveButton.textContent = 'Save Current URL';
                 saveButton.className = '';
             }, 2000);
+        }
+    };
+
+    // Function to toggle application status
+    const toggleApplied = async (url: string) => {
+        try {
+            const result = await chrome.storage.local.get("urls");
+            const urls: SavedURL[] = result.urls || [];
+            const updatedUrls = urls.map(item => 
+                item.url === url ? { ...item, applied: !item.applied } : item
+            );
+            await chrome.storage.local.set({ urls: updatedUrls });
+            await displayUrls();
+        } catch (error) {
+            console.error('Error toggling application status:', error);
         }
     };
 
@@ -24,20 +43,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!tab?.url) return;
 
             const result = await chrome.storage.local.get("urls");
-            const urls: string[] = result.urls || [];
+            const urls: SavedURL[] = result.urls || [];
             
-            updateSaveButton(urls.includes(tab.url));
+            updateSaveButton(urls.some(item => item.url === tab.url));
         } catch (error) {
             console.error('Error checking current URL:', error);
         }
     };
 
     // Function to delete a URL
-    const deleteUrl = async (urlToDelete: string) => {
+    const deleteUrl = async (url: string) => {
         try {
             const result = await chrome.storage.local.get("urls");
-            const urls: string[] = result.urls || [];
-            const newUrls = urls.filter(url => url !== urlToDelete);
+            const urls: SavedURL[] = result.urls || [];
+            const newUrls = urls.filter(item => item.url !== url);
             await chrome.storage.local.set({ urls: newUrls });
             await displayUrls();
         } catch (error) {
@@ -49,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const displayUrls = async () => {
         try {
             const result = await chrome.storage.local.get("urls");
-            const urls: string[] = result.urls || [];
+            const urls: SavedURL[] = result.urls || [];
 
             if (urls.length === 0) {
                 urlsList.innerHTML = '<p>No URLs saved yet.</p>';
@@ -58,23 +77,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Create a list of URLs
             const list = document.createElement('ul');
-            urls.forEach(url => {
+            urls.forEach(item => {
                 const li = document.createElement('li');
                 
                 // Create URL link
                 const link = document.createElement('a');
-                link.href = url;
-                link.textContent = url;
+                link.href = item.url;
+                link.textContent = item.url;
                 link.target = '_blank';
                 
+                // Create application status button
+                const statusButton = document.createElement('button');
+                statusButton.textContent = item.applied ? '✅' : '📝';
+                statusButton.className = 'status-btn';
+                statusButton.title = item.applied ? 'Applied' : 'Not Applied';
+                statusButton.onclick = () => toggleApplied(item.url);
+
                 // Create delete button
                 const deleteButton = document.createElement('button');
-                deleteButton.textContent = '×';
+                deleteButton.textContent = '❌';
                 deleteButton.className = 'delete-btn';
-                deleteButton.onclick = () => deleteUrl(url);
+                deleteButton.onclick = () => deleteUrl(item.url);
                 
                 // Add elements to list item
                 li.appendChild(link);
+                li.appendChild(statusButton);
                 li.appendChild(deleteButton);
                 list.appendChild(li);
             });
@@ -90,17 +117,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Modified save button click handler
     saveButton.addEventListener('click', async () => {
         try {
-            // Get current tab
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab?.url) return;
 
-            // Get existing URLs
             const result = await chrome.storage.local.get("urls");
-            const urls: string[] = result.urls || [];
+            const urls: SavedURL[] = result.urls || [];
 
-            if (!urls.includes(tab.url)) {
-                // Save the new URL
-                urls.push(tab.url);
+            if (!urls.some(item => item.url === tab.url)) {
+                // Save the new URL with default not-applied status
+                urls.push({ url: tab.url, applied: false });
                 await chrome.storage.local.set({ urls });
                 await displayUrls();
                 updateSaveButton(true);
