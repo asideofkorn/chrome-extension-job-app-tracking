@@ -1,11 +1,47 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Popup</title>
+    <title>Saved URLs</title>
+    <style>
+        body {
+            width: 300px;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            margin: 8px 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        button {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0052a3;
+        }
+    </style>
   </head>
   <body>
-    <h1>Saved URLs</h1>
-    <ul id="url-list"></ul>
+    <button id="save-url">Save Current URL</button>
+    <div id="urls-list"></div>
     <script src="popup.js"></script>
   </body>
 </html>
