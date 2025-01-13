@@ -1,3 +1,5 @@
+let activeTab = 'current';
+
 document.addEventListener('DOMContentLoaded', async () => {
     const urlsList = document.getElementById('urls-list');
     const saveButton = document.getElementById('save-url') as HTMLButtonElement;
@@ -9,7 +11,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         title?: string;
         company?: string;
         notes?: string;
-        relatedUrls?: string[];  // Array of related URLs
+        relatedUrls?: string[];
+        archived?: string;
+        savedAt?: string;      // Timestamp when URL was saved
+        appliedAt?: string;    // Timestamp when marked as applied
+        archivedAt?: string;   // Timestamp when archived
     }
 
     interface ScriptResult {
@@ -34,9 +40,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
-            const updatedUrls = urls.map(item => 
-                item.url === url ? { ...item, applied: !item.applied } : item
-            );
+            const updatedUrls = urls.map(item => {
+                if (item.url === url) {
+                    const newAppliedState = !item.applied;
+                    return {
+                        ...item,
+                        applied: newAppliedState,
+                        appliedAt: newAppliedState ? getCurrentDateTime() : undefined
+                    };
+                }
+                return item;
+            });
             await chrome.storage.local.set({ urls: updatedUrls });
             await displayUrls();
         } catch (error) {
@@ -167,8 +181,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
 
+            // Filter URLs based on active tab
+            const filteredUrls = urls.filter(url => 
+                activeTab === 'archived' ? url.archived : !url.archived
+            );
+
             // Sort by application status (not applied first)
-            const sortedUrls = [...urls].sort((a, b) => {
+            const sortedUrls = [...filteredUrls].sort((a, b) => {
                 if (a.applied === b.applied) return 0;
                 return a.applied ? 1 : -1;
             });
@@ -178,7 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const currentUrl = currentTab?.url;
 
             if (sortedUrls.length === 0) {
-                urlsList.innerHTML = '<p>No URLs saved yet.</p>';
+                urlsList.innerHTML = `<p>No ${activeTab} URLs.</p>`;
                 return;
             }
 
@@ -186,16 +205,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             sortedUrls.forEach(item => {
                 const li = document.createElement('li');
                 
-                // Highlight if:
-                // 1. This is the current URL
-                // 2. This URL has the current URL as a related URL
-                // 3. The current URL is one of this URL's related URLs
+                // Dim archived items, but ensure highlight is visible
+                if (item.archived) {
+                    li.style.opacity = '0.5';
+                }
+
+                // Highlight if current URL matches
                 if (currentUrl && (
                     item.url === currentUrl || 
                     item.relatedUrls?.includes(currentUrl) ||
                     currentUrl === item.url
                 )) {
                     li.className = 'active-url';
+                    li.style.opacity = '1';  // Override opacity when highlighted
                 }
 
                 // Create URL link with company and title
@@ -212,7 +234,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const statusButton = document.createElement('button');
                 statusButton.textContent = item.applied ? '✅' : '📝';
                 statusButton.className = 'status-btn';
-                statusButton.title = item.applied ? 'Applied' : 'Not Applied';
+                statusButton.title = item.applied 
+                    ? `Applied${item.appliedAt ? ` on ${item.appliedAt}` : ''}`
+                    : 'Not Applied';
                 statusButton.onclick = () => toggleApplied(item.url);
 
                 // Add note button before delete button
@@ -240,15 +264,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                     : 'Add related URL';
                 relatedUrlButton.onclick = () => showRelatedUrlEditor(item.url, item.relatedUrls);
 
+                // Add archive button before delete button
+                const archiveButton = document.createElement('button');
+                archiveButton.textContent = item.archived ? '🗄️' : '🗄️';  // Same emoji but will have different opacity
+                archiveButton.className = `archive-btn${item.archived ? ' archived' : ''}`;  // Add archived class
+                if (item.archived) {
+                    archiveButton.title = `Archived: ${item.archived}${item.archivedAt ? ` on ${item.archivedAt}` : ''} (Click to unarchive)`;
+                    archiveButton.style.opacity = '1';  // Make archive icon more visible when active
+                    archiveButton.style.color = '#ff4444';  // Add red tint when archived
+                } else {
+                    archiveButton.title = 'Archive';
+                    archiveButton.style.opacity = '0.7';  // Slightly dim when not archived
+                }
+                archiveButton.onclick = () => showArchiveEditor(item.url, item.archived);
+
                 // Add buttons to list item
                 li.appendChild(link);
                 li.appendChild(statusButton);
                 li.appendChild(noteButton);
+                li.appendChild(archiveButton);
                 li.appendChild(relatedUrlButton);
                 li.appendChild(deleteButton);
 
                 // Remove the always-visible related URLs list
                 list.appendChild(li);
+
+                // Add saved timestamp to URL tooltip
+                if (item.savedAt) {
+                    link.title = `Saved on ${item.savedAt}`;
+                }
             });
 
             urlsList.innerHTML = '';
@@ -267,6 +311,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    // Helper function to get current datetime string with timezone
+    const getCurrentDateTime = () => {
+        return new Date().toLocaleString('en-US', { 
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            dateStyle: 'medium',
+            timeStyle: 'medium'
+        });
+    };
+
     // Modified save button click handler
     saveButton.addEventListener('click', async () => {
         try {
@@ -279,12 +332,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('Current tab URL:', tab.url);
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
-            const currentUrl = tab.url;  // Store URL in a const to ensure it's defined
+            const currentUrl = tab.url;
 
-            // Check if URL exists as main URL or as a related URL
             const isMainUrl = urls.some(item => item.url === currentUrl);
             const isRelatedUrl = urls.some(item => 
-                item.relatedUrls && item.relatedUrls.includes(currentUrl)  // Now using currentUrl instead of tab.url
+                item.relatedUrls && item.relatedUrls.includes(currentUrl)
             );
 
             if (!isMainUrl && !isRelatedUrl) {
@@ -296,10 +348,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
 
                 urls.push({
-                    url: currentUrl,  // Use currentUrl here too
+                    url: currentUrl,
                     applied: false,
                     title: jobInfo.title || undefined,
-                    company: jobInfo.company || undefined
+                    company: jobInfo.company || undefined,
+                    savedAt: getCurrentDateTime()
                 });
 
                 await chrome.storage.local.set({ urls });
@@ -498,4 +551,149 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('Error removing related URL:', error);
         }
     };
+
+    // Function to show the archive editor
+    const showArchiveEditor = (url: string, currentReason: string = '') => {
+        const overlay = document.createElement('div');
+        overlay.className = 'overlay';
+        
+        const editor = document.createElement('div');
+        editor.className = 'archive-editor';
+        
+        const select = document.createElement('select');
+        const reasons = [
+            'No Response',
+            'Email Rejection',
+            'Rejected first interview',
+            'Rejected later interview',
+            'Position Closed',
+            'Missed Application',
+            'Other'
+        ];
+        reasons.forEach(reason => {
+            const option = document.createElement('option');
+            option.value = reason;
+            option.textContent = reason;
+            if (reason === currentReason) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+        
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'note-editor-buttons';
+        
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.className = 'cancel-btn';
+
+        // Create different buttons based on archive state
+        if (currentReason) {
+            // Show current reason as text
+            const currentStatusDiv = document.createElement('div');
+            currentStatusDiv.style.marginBottom = '10px';
+            currentStatusDiv.textContent = `Current Status: ${currentReason}`;
+            editor.appendChild(currentStatusDiv);
+
+            // Add unarchive button
+            const unarchiveButton = document.createElement('button');
+            unarchiveButton.textContent = 'Unarchive';
+            unarchiveButton.className = 'save-btn';
+            unarchiveButton.onclick = async () => {
+                await archiveUrl(url, '');  // Empty string to unarchive
+                document.body.removeChild(overlay);
+                document.body.removeChild(editor);
+            };
+            
+            // Add update button
+            const updateButton = document.createElement('button');
+            updateButton.textContent = 'Update Reason';
+            updateButton.className = 'save-btn';
+            updateButton.onclick = async () => {
+                await archiveUrl(url, select.value);
+                document.body.removeChild(overlay);
+                document.body.removeChild(editor);
+            };
+
+            buttonsDiv.appendChild(cancelButton);
+            buttonsDiv.appendChild(unarchiveButton);
+            buttonsDiv.appendChild(updateButton);
+        } else {
+            // Standard archive button for unarchived items
+            const archiveButton = document.createElement('button');
+            archiveButton.textContent = 'Archive';
+            archiveButton.className = 'save-btn';
+            archiveButton.onclick = async () => {
+                await archiveUrl(url, select.value);
+                document.body.removeChild(overlay);
+                document.body.removeChild(editor);
+            };
+
+            buttonsDiv.appendChild(cancelButton);
+            buttonsDiv.appendChild(archiveButton);
+        }
+        
+        cancelButton.onclick = () => {
+            document.body.removeChild(overlay);
+            document.body.removeChild(editor);
+        };
+        
+        editor.appendChild(select);
+        editor.appendChild(buttonsDiv);
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(editor);
+        select.focus();
+    };
+
+    // Function to archive a URL
+    const archiveUrl = async (url: string, reason: string) => {
+        try {
+            const result = await chrome.storage.local.get("urls");
+            const urls: SavedURL[] = result.urls || [];
+            const updatedUrls = urls.map(item => 
+                item.url === url ? { 
+                    ...item, 
+                    archived: reason,
+                    archivedAt: reason ? getCurrentDateTime() : undefined
+                } : item
+            );
+            await chrome.storage.local.set({ urls: updatedUrls });
+            
+            // Switch to appropriate tab
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                if ((button as HTMLElement).dataset.tab === (reason ? 'archived' : 'current')) {
+                    (button as HTMLButtonElement).click();  // Cast to HTMLButtonElement to access click()
+                }
+            });
+
+            await displayUrls();  // Refresh the display after archiving
+        } catch (error) {
+            console.error('Error archiving URL:', error);
+        }
+    };
+
+    // Add tab switching logic
+    const setupTabs = () => {
+        const tabButtons = document.querySelectorAll('.tab-button');
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Update active tab
+                activeTab = (button as HTMLElement).dataset.tab || 'current';
+                
+                // Update button styles
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Refresh display
+                displayUrls();
+            });
+        });
+    };
+
+    // Add setupTabs call after your existing initialization code
+    setupTabs();
+    await checkCurrentUrl();
+    await displayUrls();
 });
