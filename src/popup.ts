@@ -266,15 +266,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Add archive button before delete button
                 const archiveButton = document.createElement('button');
-                archiveButton.textContent = item.archived ? '🗄️' : '🗄️';  // Same emoji but will have different opacity
-                archiveButton.className = `archive-btn${item.archived ? ' archived' : ''}`;  // Add archived class
+                archiveButton.textContent = '🗄️';
+                archiveButton.className = `archive-btn${item.archived ? ' archived' : ''}`;
+                archiveButton.style.border = 'none';  // Remove border
+                archiveButton.style.background = 'none';  // Remove background
+                archiveButton.style.padding = '0 3px';  // Match padding with other buttons
+                archiveButton.style.cursor = 'pointer';
+
                 if (item.archived) {
                     archiveButton.title = `Archived: ${item.archived}${item.archivedAt ? ` on ${item.archivedAt}` : ''} (Click to unarchive)`;
-                    archiveButton.style.opacity = '1';  // Make archive icon more visible when active
-                    archiveButton.style.color = '#ff4444';  // Add red tint when archived
+                    archiveButton.style.opacity = '1';
                 } else {
                     archiveButton.title = 'Archive';
-                    archiveButton.style.opacity = '0.7';  // Slightly dim when not archived
+                    archiveButton.style.opacity = '0.7';
                 }
                 archiveButton.onclick = () => showArchiveEditor(item.url, item.archived);
 
@@ -562,12 +566,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         const select = document.createElement('select');
         const reasons = [
-            'No Response',
-            'Email Rejection',
-            'Rejected first interview',
-            'Rejected later interview',
-            'Position Closed',
-            'Missed Application',
+            'JP - Missed Application Window',
+            'JP - Skip - Overqualified',
+            'JP - Skip - Underqualified',
+            'JP - Other',
+            'Applied - No Response',
+            'Applied - Email - Not Good Fit',
+            'Applied - Email - Role Filled',
+            'Applied - Position Closed',
+            'Applied - Rejected after first interview',
+            'Applied - Rejected after later interview',
             'Other'
         ];
         reasons.forEach(reason => {
