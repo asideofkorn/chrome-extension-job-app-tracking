@@ -24,12 +24,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Function to temporarily update button state
     const updateSaveButton = (saved: boolean) => {
-        saveButton.textContent = saved ? 'URL Already Saved!' : 'Save Current URL';
+        saveButton.textContent = saved ? 'Job Post Already Saved!' : 'Save Current Job Post';
         saveButton.className = saved ? 'already-saved' : '';
         
         if (saved) {
             setTimeout(() => {
-                saveButton.textContent = 'Save Current URL';
+                saveButton.textContent = 'Save Current Job Post';
                 saveButton.className = '';
             }, 2000);
         }
@@ -58,6 +58,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    // Add this helper function to strip URL parameters
+    const stripUrlParameters = (url: string): string => {
+        try {
+            const urlObj = new URL(url);
+            return `${urlObj.origin}${urlObj.pathname}`;
+        } catch (error) {
+            console.error('Error parsing URL:', error);
+            return url;  // Return original URL if parsing fails
+        }
+    };
+
     // Function to check if current URL is saved
     const checkCurrentUrl = async () => {
         try {
@@ -66,34 +77,55 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
-            const currentUrl = tab.url;
+            const currentUrlStripped = stripUrlParameters(tab.url);
 
-            // Check if URL exists as main URL or as a related URL in any entry
-            const isUrlSaved = urls.some(item => 
-                item.url === currentUrl || 
-                (item.relatedUrls && item.relatedUrls.includes(currentUrl))
+            // Find the matching URL (either main or related)
+            const matchingUrl = urls.find(item => 
+                stripUrlParameters(item.url) === currentUrlStripped || 
+                (item.relatedUrls && item.relatedUrls.some(relatedUrl => 
+                    stripUrlParameters(relatedUrl) === currentUrlStripped
+                ))
             );
 
-            // Find the main URL if current URL is a related URL
-            const mainUrl = urls.find(item => 
-                item.relatedUrls && item.relatedUrls.includes(currentUrl)
-            );
-
-            updateSaveButton(isUrlSaved);
-
-            // Highlight both the main URL and its related URLs
-            const urlElements = document.querySelectorAll('li');
-            urlElements.forEach(li => {
-                const link = li.querySelector('a');
-                if (link) {
-                    const linkUrl = link.getAttribute('href');
-                    if (linkUrl === currentUrl || // Current URL matches
-                        (mainUrl && linkUrl === mainUrl.url) || // Main URL of a related URL
-                        (mainUrl?.relatedUrls?.includes(linkUrl || ''))) { // Other related URLs
-                        li.className = 'active-url';
-                    }
+            // If URL is found, switch to the appropriate tab
+            if (matchingUrl) {
+                // Determine which tab the URL belongs to
+                const targetTab = matchingUrl.archived ? 'archived' : 'current';
+                
+                // Switch to the appropriate tab if we're not already on it
+                if (activeTab !== targetTab) {
+                    const tabButtons = document.querySelectorAll('.tab-button');
+                    tabButtons.forEach(button => {
+                        if ((button as HTMLElement).dataset.tab === targetTab) {
+                            (button as HTMLButtonElement).click();
+                        }
+                    });
                 }
-            });
+
+                // Update save button to show it's already saved
+                updateSaveButton(true);
+
+                // Wait a brief moment for the tab switch and display to update
+                setTimeout(() => {
+                    const urlElements = document.querySelectorAll('li');
+                    urlElements.forEach(li => {
+                        const link = li.querySelector('a');
+                        if (link) {
+                            const linkUrl = link.getAttribute('href');
+                            if (linkUrl && (
+                                stripUrlParameters(linkUrl) === currentUrlStripped || 
+                                (matchingUrl && stripUrlParameters(matchingUrl.url) === stripUrlParameters(linkUrl)) ||
+                                (matchingUrl?.relatedUrls?.some(relatedUrl => 
+                                    stripUrlParameters(relatedUrl) === stripUrlParameters(linkUrl)
+                                ))
+                            )) {
+                                li.className = 'active-url';
+                                li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }
+                    });
+                }, 100);  // Small delay to ensure display has updated
+            }
 
         } catch (error) {
             console.error('Error checking current URL:', error);
@@ -336,23 +368,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('Current tab URL:', tab.url);
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
-            const currentUrl = tab.url;
+            const currentUrlStripped = stripUrlParameters(tab.url);
 
-            const isMainUrl = urls.some(item => item.url === currentUrl);
+            const isMainUrl = urls.some(item => 
+                stripUrlParameters(item.url) === currentUrlStripped
+            );
             const isRelatedUrl = urls.some(item => 
-                item.relatedUrls && item.relatedUrls.includes(currentUrl)
+                item.relatedUrls && item.relatedUrls.some(relatedUrl => 
+                    stripUrlParameters(relatedUrl) === currentUrlStripped
+                )
             );
 
             if (!isMainUrl && !isRelatedUrl) {
                 let jobInfo = { title: null as string | null, company: null as string | null };
-                if (currentUrl.includes('linkedin.com/jobs/')) {
+                if (currentUrlStripped.includes('linkedin.com/jobs/')) {
                     console.log('LinkedIn job page detected, fetching info...');
                     jobInfo = await getJobInfo(tab);
                     console.log('Retrieved job info:', jobInfo);
                 }
 
                 urls.push({
-                    url: currentUrl,
+                    url: currentUrlStripped,
                     applied: false,
                     title: jobInfo.title || undefined,
                     company: jobInfo.company || undefined,
@@ -360,9 +396,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 await chrome.storage.local.set({ urls });
-                await displayUrls();
                 updateSaveButton(true);
                 console.log('URL saved successfully');
+
+                // Switch to Current tab if not already there
+                if (activeTab !== 'current') {
+                    const tabButtons = document.querySelectorAll('.tab-button');
+                    tabButtons.forEach(button => {
+                        if ((button as HTMLElement).dataset.tab === 'current') {
+                            (button as HTMLButtonElement).click();
+                        }
+                    });
+                } else {
+                    // If already on Current tab, just refresh display
+                    await displayUrls();
+                }
+
+                // Wait a brief moment for the display to update, then scroll to the new item
+                setTimeout(() => {
+                    const urlElements = document.querySelectorAll('li');
+                    urlElements.forEach(li => {
+                        const link = li.querySelector('a');
+                        if (link && stripUrlParameters(link.getAttribute('href') || '') === currentUrlStripped) {
+                            li.className = 'active-url';
+                            li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    });
+                }, 100);
             } else {
                 updateSaveButton(true);
                 console.log('URL was already saved or exists as a related URL');
@@ -516,10 +576,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const result = await chrome.storage.local.get("urls");
             const urls: SavedURL[] = result.urls || [];
+            const relatedUrlStripped = stripUrlParameters(relatedUrl);
+
             const updatedUrls = urls.map(item => {
                 if (item.url === originalUrl) {
                     const relatedUrls = item.relatedUrls || [];
-                    if (!relatedUrls.includes(relatedUrl)) {
+                    if (!relatedUrls.some(url => stripUrlParameters(url) === relatedUrlStripped)) {
                         return {
                             ...item,
                             relatedUrls: [...relatedUrls, relatedUrl]
