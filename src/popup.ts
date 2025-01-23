@@ -550,8 +550,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (input.value.trim()) {
                 await addRelatedUrl(url, input.value.trim());
                 input.value = '';
-                // Refresh the related URLs list
-                await displayUrls();
+                // Close the editor and overlay
+                document.body.removeChild(overlay);
+                document.body.removeChild(editor);
             }
         };
         
